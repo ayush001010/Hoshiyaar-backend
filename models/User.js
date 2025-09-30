@@ -19,6 +19,53 @@ const userSchema = mongoose.Schema(
       type: Number,
       required: true,
     },
+    // Onboarding selections
+    board: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    subject: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    chapter: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    onboardingCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    chaptersProgress: {
+      type: [
+        new mongoose.Schema(
+          {
+            chapter: { type: Number, required: true },
+            conceptCompleted: { type: Boolean, default: false },
+            quizCompleted: { type: Boolean, default: false },
+            // Per-lesson stats keyed by lesson title
+            stats: {
+              type: Map,
+              of: new mongoose.Schema(
+                {
+                  correct: { type: Number, default: 0 },
+                  wrong: { type: Number, default: 0 },
+                  lastReviewedAt: { type: Date, default: null },
+                },
+                { _id: false }
+              ),
+              default: {},
+            },
+            updatedAt: { type: Date, default: Date.now },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
