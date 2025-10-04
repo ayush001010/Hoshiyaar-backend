@@ -31,7 +31,7 @@ const corsOptions = {
   origin: [
     'http://localhost:5173', // Vite dev server
     'http://localhost:3000', // Alternative dev port
-    'https://hoshiyaar-frontend.onrender.com', // Production frontend URL (if deployed)
+    'https://hoshiyaar-frontend-1.onrender.com', // Production frontend URL (if deployed)
     // Add your production frontend URL here when you deploy it
   ],
   credentials: true, // Allow cookies and authorization headers
