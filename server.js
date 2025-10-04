@@ -7,6 +7,7 @@ import lessonRoutes from './routes/lessonRoutes.js'; // 👈 ADD THIS LINE
 import curriculumRoutes from './routes/curriculum.js';
 import { v2 as cloudinary } from 'cloudinary';
 import uploadRoutes from './routes/upload.js';
+import reviewRoutes from './routes/review.js';
 
 // Load environment variables from .env file
 config();
@@ -44,8 +45,12 @@ app.use('/api/lessons', lessonRoutes); // 👈 ADD THIS LINE
 // Curriculum hierarchical routes
 app.use('/api/curriculum', curriculumRoutes);
 
+
 // Upload routes
 app.use('/api/upload', uploadRoutes);
+
+// Review routes
+app.use('/api/review', reviewRoutes);
 
 
 const PORT = process.env.PORT || 5000;
