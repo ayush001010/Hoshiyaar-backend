@@ -26,8 +26,22 @@ connectDB();
 
 const app = express();
 
+// CORS configuration
+const corsOptions = {
+  origin: [
+    'http://localhost:5173', // Vite dev server
+    'http://localhost:3000', // Alternative dev port
+    'https://hoshiyaar-frontend.onrender.com', // Production frontend URL (if deployed)
+    // Add your production frontend URL here when you deploy it
+  ],
+  credentials: true, // Allow cookies and authorization headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+};
+
 // Middleware
-app.use(cors()); // Enable Cross-Origin Resource Sharing
+app.use(cors(corsOptions)); // Enable Cross-Origin Resource Sharing with specific options
 app.use(json()); // Allow the server to accept JSON in the request body
 
 // Define a simple route for the root URL
