@@ -1,6 +1,8 @@
 import express from 'express';
 import UserIncorrectQuestion from '../models/UserIncorrectQuestion.js';
 import mongoose from 'mongoose';
+import DefaultRevisionQuestion from '../models/DefaultRevisionQuestion.js';
+import Module from '../models/Module.js';
 
 const router = express.Router();
 
@@ -64,4 +66,71 @@ router.post('/backfill', async (req, res) => {
   }
 });
 
+// GET /api/review/defaults?chapterId=&unitId=&moduleId=&subjectId=&board=&classTitle=&userId=
+router.get('/defaults', async (req, res) => {
+  try {
+    const { moduleId, unitId, chapterId, subjectId } = req.query;
+    const filter = { active: true };
+    if (moduleId) filter.moduleId = moduleId;
+    else if (unitId) filter.unitId = unitId;
+    else if (chapterId) filter.chapterId = chapterId;
+    else if (subjectId) filter.subjectId = subjectId;
+    const rows = await DefaultRevisionQuestion.find(filter).sort({ order: 1, createdAt: 1 }).limit(500);
+    return res.json(rows);
+  } catch (err) {
+    console.error('Error listing default revision questions', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/review/defaults/import - import defaults with the same format as lessons
+router.post('/defaults/import', async (req, res) => {
+  try {
+    const payload = req.body;
+    // Expect same shape as lesson import; map into DefaultRevisionQuestion under chosen scope
+    const { board_title = 'CBSE', class_title = '5', subject_title = 'Science', chapterId, unitId, moduleId } = payload || {};
+    // Resolve references if provided as titles would require joins; for MVP, accept chapterId/unitId/moduleId directly
+    if (!chapterId && !unitId && !moduleId) {
+      return res.status(400).json({ message: 'chapterId or unitId or moduleId required' });
+    }
+    // If importing at unit or chapter scope and moduleId not provided,
+    // distribute lessons to modules in order for better per-lesson mapping
+    let modulesArr = [];
+    if (!moduleId && (unitId || chapterId)) {
+      const filter = unitId ? { unitId } : { chapterId };
+      modulesArr = await Module.find(filter).sort({ order: 1 });
+    }
+
+    const questions = [];
+    let order = 0;
+    let lessonIndex = 0;
+    for (const lesson of (payload?.lessons || [])) {
+      const targetModuleId = moduleId || (modulesArr?.[lessonIndex]?._id);
+      for (const c of (lesson?.concepts || [])) {
+        order += 1;
+        questions.push({
+          chapterId,
+          unitId,
+          moduleId: targetModuleId || undefined,
+          type: c.type === 'concept' ? 'statement' : c.type,
+          question: c.question,
+          text: c.text,
+          options: Array.isArray(c.options) ? c.options.filter(Boolean) : [],
+          answer: c.answer,
+          words: Array.isArray(c.words) ? c.words.filter(Boolean) : [],
+          images: Array.isArray(c.images) ? c.images.filter(Boolean) : [],
+          order
+        });
+      }
+      lessonIndex += 1;
+    }
+    const inserted = await DefaultRevisionQuestion.insertMany(questions);
+    return res.status(201).json({ inserted: inserted.length });
+  } catch (err) {
+    console.error('Error importing default revision questions', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 export default router;
+

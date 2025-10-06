@@ -1,4 +1,8 @@
 import User from '../models/User.js';
+import Board from '../models/Board.js';
+import ClassLevel from '../models/ClassLevel.js';
+import Subject from '../models/Subject.js';
+import Chapter from '../models/Chapter.js';
 import jwt from 'jsonwebtoken';
 
 // Helper function to generate a JWT
@@ -12,7 +16,7 @@ const generateToken = (id) => {
 // @route   POST /api/auth/register
 // @access  Public
 export const registerUser = async (req, res) => {
-  const { name, email, password, age, board = null, subject = null, chapter = null } = req.body;
+  const { name, email, password, age, board = null, classTitle = null, subject = null, chapter = null } = req.body;
 
   try {
     const userExists = await User.findOne({ email });
@@ -20,6 +24,13 @@ export const registerUser = async (req, res) => {
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });
     }
+
+    // Resolve IDs if names provided
+    let boardDoc = null, classDoc = null, subjectDoc = null, chapterDoc = null;
+    if (board) boardDoc = await Board.findOne({ name: board });
+    if (classTitle) classDoc = await ClassLevel.findOne({ name: String(classTitle) });
+    if (boardDoc && classDoc && subject) subjectDoc = await Subject.findOne({ boardId: boardDoc._id, classId: classDoc._id, name: subject });
+    if (subjectDoc && chapter) chapterDoc = await Chapter.findOne({ subjectId: subjectDoc._id, title: chapter });
 
     const user = await User.create({
       name,
@@ -29,14 +40,17 @@ export const registerUser = async (req, res) => {
       board,
       subject,
       chapter,
+      boardId: boardDoc ? boardDoc._id : null,
+      classId: classDoc ? classDoc._id : null,
+      subjectId: subjectDoc ? subjectDoc._id : null,
+      chapterId: chapterDoc ? chapterDoc._id : null,
       // Show onboarding after signup until the learner completes selections
-      onboardingCompleted: !!(board && subject),
+      onboardingCompleted: !!((board || boardDoc) && (subject || subjectDoc)),
     });
 
     if (user) {
       res.status(201).json({
         _id: user._id,
-        name: user.name,
         email: user.email,
         board: user.board,
         subject: user.subject,
@@ -71,7 +85,6 @@ export const loginUser = async (req, res) => {
     if (user && (await user.matchPassword(password))) {
       res.json({
         _id: user._id,
-        name: user.name,
         email: user.email,
         board: user.board,
         subject: user.subject,
@@ -105,7 +118,11 @@ export const getUser = async (req, res) => {
       board: user.board,
       subject: user.subject,
       chapter: user.chapter,
-      onboardingCompleted: user.onboardingCompleted,
+        onboardingCompleted: user.onboardingCompleted,
+        boardId: user.boardId,
+        classId: user.classId,
+        subjectId: user.subjectId,
+        chapterId: user.chapterId,
     });
   } catch (error) {
     res.status(500).json({ message: `Server Error: ${error.message}` });
@@ -132,7 +149,6 @@ export const updateOnboarding = async (req, res) => {
     await user.save();
     return res.json({
       _id: user._id,
-      name: user.name,
       email: user.email,
       board: user.board,
       subject: user.subject,

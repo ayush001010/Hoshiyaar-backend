@@ -20,6 +20,11 @@ const userSchema = mongoose.Schema(
       required: true,
     },
     // Onboarding selections
+  boardId: { type: mongoose.Schema.Types.ObjectId, ref: 'Board', default: null },
+  classId: { type: mongoose.Schema.Types.ObjectId, ref: 'ClassLevel', default: null },
+  subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', default: null },
+  chapterId: { type: mongoose.Schema.Types.ObjectId, ref: 'Chapter', default: null },
+  // Deprecated name-based fields kept for backward compatibility with older clients
     board: {
       type: String,
       default: null,

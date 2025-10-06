@@ -8,6 +8,8 @@ import curriculumRoutes from './routes/curriculum.js';
 import { v2 as cloudinary } from 'cloudinary';
 import uploadRoutes from './routes/upload.js';
 import reviewRoutes from './routes/review.js';
+import Subject from './models/Subject.js';
+import ClassLevel from './models/ClassLevel.js';
 
 // Load environment variables from .env file
 config();
@@ -70,3 +72,18 @@ app.use('/api/review', reviewRoutes);
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// One-time index migration: drop deprecated unique index on subjects (boardId_1_name_1)
+// and ensure the new compound index (boardId, classId, name). Safe to run on every boot.
+(async () => {
+  try {
+    // Sync declared indexes (creates boardId_1_classId_1_name_1 if missing)
+    await Subject.syncIndexes();
+    // Attempt to drop the old index; ignore if it doesn't exist
+    try { await Subject.collection.dropIndex('boardId_1_name_1'); } catch (e) { /* ignore */ }
+    // Ensure class-level unique index and no legacy global index remains
+    await ClassLevel.syncIndexes();
+  } catch (e) {
+    console.warn('Index migration for Subject failed:', e.message);
+  }
+})();
