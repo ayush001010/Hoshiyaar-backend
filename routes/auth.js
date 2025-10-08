@@ -1,6 +1,6 @@
 import express from 'express';
 // Corrected the import to use named imports directly
-import { registerUser, loginUser, updateOnboarding, getUser, getProgress, updateProgress } from '../controllers/authController.js';
+import { registerUser, loginUser, updateOnboarding, getUser, getProgress, updateProgress, checkUsername } from '../controllers/authController.js';
 
 const router = express.Router();
 
@@ -15,6 +15,9 @@ router.put('/onboarding', updateOnboarding);
 
 // Route to get user data
 router.get('/user/:userId', getUser);
+
+// Username availability
+router.get('/check-username', checkUsername);
 
 // Progress routes
 router.get('/progress/:userId', getProgress);

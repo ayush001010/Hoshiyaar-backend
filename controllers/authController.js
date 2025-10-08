@@ -16,13 +16,14 @@ const generateToken = (id) => {
 // @route   POST /api/auth/register
 // @access  Public
 export const registerUser = async (req, res) => {
-  const { name, email, password, age, board = null, classTitle = null, subject = null, chapter = null } = req.body;
+  const { username, name, email = null, password, age, dateOfBirth = null, classLevel = null, board = null, classTitle = null, subject = null, chapter = null } = req.body;
 
   try {
-    const userExists = await User.findOne({ email });
+    // Ensure unique username
+    const userExists = await User.findOne({ username });
 
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ message: 'Username already taken' });
     }
 
     // Resolve IDs if names provided
@@ -33,10 +34,13 @@ export const registerUser = async (req, res) => {
     if (subjectDoc && chapter) chapterDoc = await Chapter.findOne({ subjectId: subjectDoc._id, title: chapter });
 
     const user = await User.create({
+      username,
       name,
       email,
       password,
       age,
+      dateOfBirth,
+      classLevel,
       board,
       subject,
       chapter,
@@ -45,13 +49,19 @@ export const registerUser = async (req, res) => {
       subjectId: subjectDoc ? subjectDoc._id : null,
       chapterId: chapterDoc ? chapterDoc._id : null,
       // Show onboarding after signup until the learner completes selections
+      // Mark onboarding complete if we have BOTH a board and a subject (string or resolved doc)
       onboardingCompleted: !!((board || boardDoc) && (subject || subjectDoc)),
     });
 
     if (user) {
       res.status(201).json({
         _id: user._id,
+        username: user.username,
+        name: user.name,
         email: user.email,
+        age: user.age,
+        dateOfBirth: user.dateOfBirth,
+        classLevel: user.classLevel,
         board: user.board,
         subject: user.subject,
         chapter: user.chapter,
@@ -70,22 +80,27 @@ export const registerUser = async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 export const loginUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
 
   // Basic validation to ensure inputs exist
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Please provide an email and password' });
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Please provide a username and password' });
   }
 
   try {
-    // Find user by email
-    const user = await User.findOne({ email });
+    // Find user by username
+    const user = await User.findOne({ username });
 
     // Check if user exists and then compare the password
     if (user && (await user.matchPassword(password))) {
       res.json({
         _id: user._id,
+        username: user.username,
+        name: user.name,
         email: user.email,
+        age: user.age,
+        dateOfBirth: user.dateOfBirth,
+        classLevel: user.classLevel,
         board: user.board,
         subject: user.subject,
         chapter: user.chapter,
@@ -107,14 +122,19 @@ export const loginUser = async (req, res) => {
 // @access  Public (for simplicity) - ideally protect with auth middleware
 export const getUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.userId).select('name email board subject chapter onboardingCompleted');
+    const user = await User.findById(req.params.userId).select('username name email phone age dateOfBirth classLevel board subject chapter onboardingCompleted boardId classId subjectId chapterId');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
     res.json({
       _id: user._id,
+      username: user.username,
       name: user.name,
       email: user.email,
+      phone: user.phone,
+      age: user.age,
+      dateOfBirth: user.dateOfBirth,
+      classLevel: user.classLevel,
       board: user.board,
       subject: user.subject,
       chapter: user.chapter,
@@ -133,7 +153,7 @@ export const getUser = async (req, res) => {
 // @route   PUT /api/auth/onboarding
 // @access  Public (for simplicity) - ideally protect with auth middleware
 export const updateOnboarding = async (req, res) => {
-  const { userId, board = null, subject = null, chapter = null } = req.body;
+  const { userId, board = null, subject = null, chapter = null, name = null, phone = null, classLevel = null, dateOfBirth = null, email = null } = req.body;
   if (!userId) {
     return res.status(400).json({ message: 'userId is required' });
   }
@@ -142,18 +162,55 @@ export const updateOnboarding = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    user.board = board;
-    user.subject = subject;
-    user.chapter = chapter;
-    user.onboardingCompleted = !!(board && subject);
+    if (board !== null) user.board = board;
+    if (subject !== null) user.subject = subject;
+    if (chapter !== null) user.chapter = chapter;
+    if (name !== null) user.name = name;
+    if (phone !== null) user.phone = phone;
+    if (classLevel !== null) user.classLevel = classLevel;
+    if (dateOfBirth !== null) {
+      const parsed = dateOfBirth ? new Date(dateOfBirth) : null;
+      if (parsed && isNaN(parsed.getTime())) {
+        return res.status(400).json({ message: 'Invalid dateOfBirth format. Use YYYY-MM-DD.' });
+      }
+      user.dateOfBirth = parsed;
+    }
+    if (email !== null) user.email = email;
+    // Resolve and persist normalized IDs based on current string selections
+    try {
+      let boardDoc = null, classDoc = null, subjectDoc = null, chapterDoc = null;
+      if (user.board) boardDoc = await Board.findOne({ name: user.board });
+      // classLevel may be numeric or string; ClassLevel.name is stored as string
+      if (user.classLevel || user.classId) classDoc = await ClassLevel.findOne({ name: String(user.classLevel || '') });
+      if (boardDoc && classDoc && user.subject) subjectDoc = await Subject.findOne({ boardId: boardDoc._id, classId: classDoc._id, name: user.subject });
+      if (subjectDoc && user.chapter) chapterDoc = await Chapter.findOne({ subjectId: subjectDoc._id, title: user.chapter });
+      user.boardId = boardDoc ? boardDoc._id : null;
+      user.classId = classDoc ? classDoc._id : null;
+      user.subjectId = subjectDoc ? subjectDoc._id : null;
+      user.chapterId = chapterDoc ? chapterDoc._id : null;
+      // Only flip onboardingCompleted to true if both selections exist
+      user.onboardingCompleted = !!((user.board || boardDoc) && (user.subject || subjectDoc));
+    } catch (e) {
+      // Do not fail the request if resolution fails; keep strings and continue
+    }
     await user.save();
     return res.json({
       _id: user._id,
+      username: user.username,
+      name: user.name,
       email: user.email,
+      age: user.age,
+      dateOfBirth: user.dateOfBirth,
+      classLevel: user.classLevel,
+      phone: user.phone,
       board: user.board,
       subject: user.subject,
       chapter: user.chapter,
       onboardingCompleted: user.onboardingCompleted,
+      boardId: user.boardId,
+      classId: user.classId,
+      subjectId: user.subjectId,
+      chapterId: user.chapterId,
     });
   } catch (error) {
     res.status(500).json({ message: `Server Error: ${error.message}` });
@@ -205,6 +262,22 @@ export const updateProgress = async (req, res) => {
     res.json(user.chaptersProgress);
   } catch (error) {
     res.status(500).json({ message: `Server Error: ${error.message}` });
+  }
+};
+
+// @desc    Check if a username is available
+// @route   GET /api/auth/check-username?username=foo
+// @access  Public
+export const checkUsername = async (req, res) => {
+  try {
+    const username = (req.query.username || '').trim();
+    if (!username) {
+      return res.status(400).json({ message: 'username is required', available: false });
+    }
+    const exists = await User.exists({ username });
+    return res.json({ available: !exists });
+  } catch (error) {
+    return res.status(500).json({ message: `Server Error: ${error.message}` });
   }
 };
 

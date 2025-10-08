@@ -3,13 +3,21 @@ import bcrypt from 'bcryptjs';
 
 const userSchema = mongoose.Schema(
   {
-    name: {
-      type: String,
-    },
-    email: {
+    username: {
       type: String,
       required: true,
       unique: true,
+      trim: true,
+    },
+    name: {
+      type: String,
+    },
+    // Email is optional now; login is done via username
+    email: {
+      type: String,
+      default: null,
+      unique: false,
+      trim: true,
     },
     password: {
       type: String,
@@ -18,6 +26,20 @@ const userSchema = mongoose.Schema(
     age: {
       type: Number,
       required: true,
+    },
+    dateOfBirth: {
+      type: Date,
+      default: null,
+    },
+    classLevel: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    phone: {
+      type: String,
+      default: null,
+      trim: true,
     },
     // Onboarding selections
   boardId: { type: mongoose.Schema.Types.ObjectId, ref: 'Board', default: null },
