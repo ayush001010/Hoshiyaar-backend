@@ -10,6 +10,7 @@ import uploadRoutes from './routes/upload.js';
 import reviewRoutes from './routes/review.js';
 import Subject from './models/Subject.js';
 import ClassLevel from './models/ClassLevel.js';
+import User from './models/User.js';
 
 // Load environment variables from .env file
 config();
@@ -83,6 +84,12 @@ app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
     try { await Subject.collection.dropIndex('boardId_1_name_1'); } catch (e) { /* ignore */ }
     // Ensure class-level unique index and no legacy global index remains
     await ClassLevel.syncIndexes();
+
+    // --- User index migration ---
+    // Ensure the model's current indexes are applied (email should NOT be unique)
+    await User.syncIndexes();
+    // Drop any legacy unique index on email that may still exist in DB
+    try { await User.collection.dropIndex('email_1'); } catch (e) { /* ignore if missing */ }
   } catch (e) {
     console.warn('Index migration for Subject failed:', e.message);
   }
