@@ -16,7 +16,7 @@ const generateToken = (id) => {
 // @route   POST /api/auth/register
 // @access  Public
 export const registerUser = async (req, res) => {
-  const { username, name, email = null, password, age, dateOfBirth = null, classLevel = null, board = null, classTitle = null, subject = null, chapter = null } = req.body;
+  const { username, name, email = null, age, dateOfBirth, classLevel = null, board = null, classTitle = null, subject = null, chapter = null } = req.body;
 
   try {
     // Ensure unique username
@@ -37,7 +37,6 @@ export const registerUser = async (req, res) => {
       username,
       name,
       email,
-      password,
       age,
       dateOfBirth,
       classLevel,
@@ -80,19 +79,19 @@ export const registerUser = async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 export const loginUser = async (req, res) => {
-  const { username, password } = req.body;
+  const { username, dateOfBirth } = req.body;
 
   // Basic validation to ensure inputs exist
-  if (!username || !password) {
-    return res.status(400).json({ message: 'Please provide a username and password' });
+  if (!username || !dateOfBirth) {
+    return res.status(400).json({ message: 'Please provide a username and date of birth' });
   }
 
   try {
     // Find user by username
     const user = await User.findOne({ username });
 
-    // Check if user exists and then compare the password
-    if (user && (await user.matchPassword(password))) {
+    // Check if user exists and then compare the date of birth
+    if (user && (await user.matchDateOfBirth(dateOfBirth))) {
       res.json({
         _id: user._id,
         username: user.username,

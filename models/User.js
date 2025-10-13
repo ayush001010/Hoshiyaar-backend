@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
 
 const userSchema = mongoose.Schema(
   {
@@ -20,17 +19,13 @@ const userSchema = mongoose.Schema(
       sparse: true, // Only index non-null values
       trim: true,
     },
-    password: {
-      type: String,
-      required: true,
-    },
     age: {
       type: Number,
       required: true,
     },
     dateOfBirth: {
       type: Date,
-      default: null,
+      required: true,
     },
     classLevel: {
       type: String,
@@ -100,21 +95,13 @@ const userSchema = mongoose.Schema(
   }
 );
 
-// Method to compare entered password with the hashed password in the database
-userSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
+// Method to compare entered date of birth with the stored date of birth
+userSchema.methods.matchDateOfBirth = async function (enteredDateOfBirth) {
+  // Convert both dates to ISO string format for comparison
+  const storedDate = this.dateOfBirth.toISOString().split('T')[0]; // YYYY-MM-DD format
+  const enteredDate = new Date(enteredDateOfBirth).toISOString().split('T')[0];
+  return storedDate === enteredDate;
 };
-
-// Middleware to hash password before saving a new user
-userSchema.pre('save', async function (next) {
-  // Only run this function if password was modified (or is new)
-  if (!this.isModified('password')) {
-    next();
-  }
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-});
 
 const User = mongoose.model('User', userSchema);
 
