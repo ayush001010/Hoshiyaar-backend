@@ -152,7 +152,7 @@ export const getUser = async (req, res) => {
 // @route   PUT /api/auth/onboarding
 // @access  Public (for simplicity) - ideally protect with auth middleware
 export const updateOnboarding = async (req, res) => {
-  const { userId, board = null, subject = null, chapter = null, name = null, phone = null, classLevel = null, dateOfBirth = null, email = null } = req.body;
+  const { userId, username = null, board = null, subject = null, chapter = null, name = null, phone = null, classLevel = null, dateOfBirth = null, email = null } = req.body;
   if (!userId) {
     return res.status(400).json({ message: 'userId is required' });
   }
@@ -160,6 +160,17 @@ export const updateOnboarding = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
+    }
+    // Username update with uniqueness check
+    if (username !== null && String(username).trim()) {
+      const normalized = String(username).trim();
+      if (normalized !== user.username) {
+        const exists = await User.exists({ username: normalized, _id: { $ne: user._id } });
+        if (exists) {
+          return res.status(400).json({ message: 'Username already taken' });
+        }
+        user.username = normalized;
+      }
     }
     if (board !== null) user.board = board;
     if (subject !== null) user.subject = subject;
