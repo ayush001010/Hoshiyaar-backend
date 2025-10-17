@@ -29,9 +29,44 @@ export const registerUser = async (req, res) => {
     // Resolve IDs if names provided
     let boardDoc = null, classDoc = null, subjectDoc = null, chapterDoc = null;
     if (board) boardDoc = await Board.findOne({ name: board });
-    if (classTitle) classDoc = await ClassLevel.findOne({ name: String(classTitle) });
-    if (boardDoc && classDoc && subject) subjectDoc = await Subject.findOne({ boardId: boardDoc._id, classId: classDoc._id, name: subject });
-    if (subjectDoc && chapter) chapterDoc = await Chapter.findOne({ subjectId: subjectDoc._id, title: chapter });
+    // Prefer classLevel if provided; fall back to classTitle for backward compat. Scope by board when known
+    const className = classLevel ?? classTitle;
+    if (className) {
+      classDoc = await ClassLevel.findOne({ name: String(className), ...(boardDoc ? { boardId: boardDoc._id } : {}) });
+    }
+    // Resolve subject with graceful fallbacks: (board+class) -> (board only) -> (by name)
+    if (subject) {
+      if (boardDoc && classDoc) {
+        subjectDoc = await Subject.findOne({ boardId: boardDoc._id, classId: classDoc._id, name: subject });
+      }
+      if (!subjectDoc && boardDoc) {
+        subjectDoc = await Subject.findOne({ boardId: boardDoc._id, name: subject });
+      }
+      if (!subjectDoc) {
+        subjectDoc = await Subject.findOne({ name: subject });
+      }
+    }
+    // Resolve chapter similarly: prefer via subjectId, otherwise by title only
+    if (chapter) {
+      if (subjectDoc) {
+        chapterDoc = await Chapter.findOne({ subjectId: subjectDoc._id, title: chapter });
+      }
+      if (!chapterDoc) {
+        chapterDoc = await Chapter.findOne({ title: chapter });
+      }
+    }
+
+    // Back-fill missing associations from what we discovered
+    if (!classDoc && subjectDoc?.classId) {
+      classDoc = await ClassLevel.findById(subjectDoc.classId);
+    }
+    if (!boardDoc && (subjectDoc?.boardId || classDoc?.boardId)) {
+      const bid = subjectDoc?.boardId || classDoc?.boardId;
+      if (bid) boardDoc = await Board.findById(bid);
+    }
+    if (!subjectDoc && chapterDoc?.subjectId) {
+      subjectDoc = await Subject.findById(chapterDoc.subjectId);
+    }
 
     const user = await User.create({
       username,
@@ -48,8 +83,8 @@ export const registerUser = async (req, res) => {
       subjectId: subjectDoc ? subjectDoc._id : null,
       chapterId: chapterDoc ? chapterDoc._id : null,
       // Show onboarding after signup until the learner completes selections
-      // Mark onboarding complete if we have BOTH a board and a subject (string or resolved doc)
-      onboardingCompleted: !!((board || boardDoc) && (subject || subjectDoc)),
+      // Mark onboarding complete only if board, subject, and chapter are present
+      onboardingCompleted: !!((board || boardDoc) && (subject || subjectDoc) && (chapter || chapterDoc)),
     });
 
     if (user) {
@@ -152,7 +187,7 @@ export const getUser = async (req, res) => {
 // @route   PUT /api/auth/onboarding
 // @access  Public (for simplicity) - ideally protect with auth middleware
 export const updateOnboarding = async (req, res) => {
-  const { userId, username = null, board = null, subject = null, chapter = null, name = null, phone = null, classLevel = null, dateOfBirth = null, email = null } = req.body;
+  const { userId, username = null, board = null, subject = null, chapter = null, name = null, phone = null, classLevel = null, dateOfBirth = null, email = null, classTitle = null } = req.body;
   if (!userId) {
     return res.status(400).json({ message: 'userId is required' });
   }
@@ -190,16 +225,47 @@ export const updateOnboarding = async (req, res) => {
     try {
       let boardDoc = null, classDoc = null, subjectDoc = null, chapterDoc = null;
       if (user.board) boardDoc = await Board.findOne({ name: user.board });
-      // classLevel may be numeric or string; ClassLevel.name is stored as string
-      if (user.classLevel || user.classId) classDoc = await ClassLevel.findOne({ name: String(user.classLevel || '') });
-      if (boardDoc && classDoc && user.subject) subjectDoc = await Subject.findOne({ boardId: boardDoc._id, classId: classDoc._id, name: user.subject });
-      if (subjectDoc && user.chapter) chapterDoc = await Chapter.findOne({ subjectId: subjectDoc._id, title: user.chapter });
+      // Resolve class by classLevel or classTitle and scope by board when available
+      const className = user.classLevel || classLevel || classTitle || '';
+      if (className) classDoc = await ClassLevel.findOne({ name: String(className), ...(boardDoc ? { boardId: boardDoc._id } : {}) });
+      // Resolve subject with graceful fallbacks
+      if (user.subject) {
+        if (boardDoc && classDoc) {
+          subjectDoc = await Subject.findOne({ boardId: boardDoc._id, classId: classDoc._id, name: user.subject });
+        }
+        if (!subjectDoc && boardDoc) {
+          subjectDoc = await Subject.findOne({ boardId: boardDoc._id, name: user.subject });
+        }
+        if (!subjectDoc) {
+          subjectDoc = await Subject.findOne({ name: user.subject });
+        }
+      }
+      // Resolve chapter
+      if (user.chapter) {
+        if (subjectDoc) {
+          chapterDoc = await Chapter.findOne({ subjectId: subjectDoc._id, title: user.chapter });
+        }
+        if (!chapterDoc) {
+          chapterDoc = await Chapter.findOne({ title: user.chapter });
+        }
+      }
+      // Back-fill missing associations from what we discovered
+      if (!classDoc && subjectDoc?.classId) {
+        classDoc = await ClassLevel.findById(subjectDoc.classId);
+      }
+      if (!boardDoc && (subjectDoc?.boardId || classDoc?.boardId)) {
+        const bid = subjectDoc?.boardId || classDoc?.boardId;
+        if (bid) boardDoc = await Board.findById(bid);
+      }
+      if (!subjectDoc && chapterDoc?.subjectId) {
+        subjectDoc = await Subject.findById(chapterDoc.subjectId);
+      }
       user.boardId = boardDoc ? boardDoc._id : null;
       user.classId = classDoc ? classDoc._id : null;
       user.subjectId = subjectDoc ? subjectDoc._id : null;
       user.chapterId = chapterDoc ? chapterDoc._id : null;
-      // Only flip onboardingCompleted to true if both selections exist
-      user.onboardingCompleted = !!((user.board || boardDoc) && (user.subject || subjectDoc));
+      // Only flip onboardingCompleted to true if board, subject, and chapter exist
+      user.onboardingCompleted = !!((user.board || boardDoc) && (user.subject || subjectDoc) && (user.chapter || chapterDoc));
     } catch (e) {
       // Do not fail the request if resolution fails; keep strings and continue
     }
