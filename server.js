@@ -36,6 +36,9 @@ const corsOptions = {
     'http://localhost:3000', // Alternative dev port
     'https://hoshiyaar-frontend-1.onrender.com', // Production frontend URL (if deployed)
     'http://hoshi-backend-env.eba-t92ieqn2.ap-southeast-2.elasticbeanstalk.com', // HTTPS backend URL
+    'http://hoshiyaar-frontend.s3-website-ap-southeast-2.amazonaws.com', // AWS S3 frontend
+    'https://d1234567890.cloudfront.net', // CloudFront frontend (replace with your actual CloudFront URL)
+    'https://hoshiyaar-backend.onrender.com', // Render backend (if using Render)
     // Add your production frontend URL here when you deploy it
   ],
   credentials: true, // Allow cookies and authorization headers
