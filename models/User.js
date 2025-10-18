@@ -76,6 +76,8 @@ const userSchema = mongoose.Schema(
                 {
                   correct: { type: Number, default: 0 },
                   wrong: { type: Number, default: 0 },
+                  bestScore: { type: Number, default: 0 },
+                  lastScore: { type: Number, default: 0 },
                   lastReviewedAt: { type: Date, default: null },
                 },
                 { _id: false }

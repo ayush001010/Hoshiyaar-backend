@@ -308,19 +308,30 @@ export const getProgress = async (req, res) => {
 // @desc    Update chapter progress
 // @route   PUT /api/auth/progress
 export const updateProgress = async (req, res) => {
-  const { userId, chapter, conceptCompleted, quizCompleted, lessonTitle, isCorrect } = req.body;
-  if (!userId || !chapter) return res.status(400).json({ message: 'userId and chapter required' });
+  const { userId, chapter, conceptCompleted, quizCompleted, lessonTitle, isCorrect, deltaScore = 0, resetLesson = false } = req.body;
+  if (!userId) return res.status(400).json({ message: 'userId is required' });
   try {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
-    const idx = user.chaptersProgress.findIndex((c) => c.chapter === Number(chapter));
+    // Coerce chapter to a safe number; default to 1 if not provided/NaN (supports moduleId URLs)
+    const chapterNum = Number(chapter);
+    const normalizedChapter = Number.isFinite(chapterNum) && chapterNum > 0 ? chapterNum : 1;
+    const idx = user.chaptersProgress.findIndex((c) => c.chapter === normalizedChapter);
     if (idx >= 0) {
       if (typeof conceptCompleted === 'boolean') user.chaptersProgress[idx].conceptCompleted = conceptCompleted;
       if (typeof quizCompleted === 'boolean') user.chaptersProgress[idx].quizCompleted = quizCompleted;
       if (lessonTitle && typeof isCorrect === 'boolean') {
         const stats = user.chaptersProgress[idx].stats || new Map();
-        const current = stats.get(lessonTitle) || { correct: 0, wrong: 0, lastReviewedAt: null };
+        // Reset lesson score if requested when opening lesson
+        if (resetLesson) {
+          stats.set(lessonTitle, { correct: 0, wrong: 0, bestScore: (stats.get(lessonTitle)?.bestScore || 0), lastScore: 0, lastReviewedAt: new Date() });
+        }
+        const current = stats.get(lessonTitle) || { correct: 0, wrong: 0, bestScore: 0, lastScore: 0, lastReviewedAt: null };
         if (isCorrect) current.correct += 1; else current.wrong += 1;
+        // Update scores: cumulative lastScore for this session; persist bestScore if improved
+        const newLast = (current.lastScore || 0) + Number(deltaScore || 0);
+        current.lastScore = Math.max(0, newLast);
+        current.bestScore = Math.max(current.bestScore || 0, current.lastScore);
         current.lastReviewedAt = new Date();
         stats.set(lessonTitle, current);
         user.chaptersProgress[idx].stats = stats;
@@ -328,10 +339,10 @@ export const updateProgress = async (req, res) => {
       user.chaptersProgress[idx].updatedAt = new Date();
     } else {
       user.chaptersProgress.push({
-        chapter: Number(chapter),
+        chapter: normalizedChapter,
         conceptCompleted: !!conceptCompleted,
         quizCompleted: !!quizCompleted,
-        stats: lessonTitle && typeof isCorrect === 'boolean' ? new Map([[lessonTitle, { correct: isCorrect ? 1 : 0, wrong: isCorrect ? 0 : 1, lastReviewedAt: new Date() }]]) : new Map(),
+        stats: lessonTitle && typeof isCorrect === 'boolean' ? new Map([[lessonTitle, { correct: isCorrect ? 1 : 0, wrong: isCorrect ? 0 : 1, bestScore: Math.max(0, Number(deltaScore || 0)), lastScore: Math.max(0, Number(deltaScore || 0)), lastReviewedAt: new Date() }]]) : new Map(),
       });
     }
     await user.save();
