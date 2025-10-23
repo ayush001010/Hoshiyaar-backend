@@ -32,14 +32,14 @@ const app = express();
 // CORS configuration
 const corsOptions = {
   origin: [
+    'https://www.hoshiyaar.info', // <<< --- ADD THIS (Your primary production frontend)
+    'https://hoshiyaar.info',
     'http://localhost:5173', // Vite dev server
     'http://localhost:3000', // Alternative dev port
+    'http://192.168.1.11:3000', // Mobile access from local network
+    'http://192.168.1.11:5173', // Mobile access for dev server
     'https://hoshiyaar-frontend-1.onrender.com', // Production frontend URL (if deployed)
-    'http://hoshi-backend-env.eba-t92ieqn2.ap-southeast-2.elasticbeanstalk.com', // HTTPS backend URL
-    'http://hoshiyaar.s3-website-ap-southeast-2.amazonaws.com', // AWS S3 frontend (corrected URL)
-    'http://hoshiyaar-frontend.s3-website-ap-southeast-2.amazonaws.com', // AWS S3 frontend (alternative)
-    'https://d1234567890.cloudfront.net', // CloudFront frontend (replace with your actual CloudFront URL)
-    'https://hoshiyaar-backend.onrender.com', // Render backend (if using Render)
+    
     // Add your production frontend URL here when you deploy it
   ],
   credentials: true, // Allow cookies and authorization headers
@@ -77,7 +77,10 @@ app.use('/api/review', reviewRoutes);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Backend accessible from mobile: http://192.168.1.11:${PORT}`);
+});
 
 // One-time index migration: drop deprecated unique index on subjects (boardId_1_name_1)
 // and ensure the new compound index (boardId, classId, name). Safe to run on every boot.
