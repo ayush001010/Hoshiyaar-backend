@@ -1,6 +1,6 @@
 import express from 'express';
 // Corrected the import to use named imports directly
-import { registerUser, loginUser, updateOnboarding, getUser, getProgress, updateProgress, checkUsername } from '../controllers/authController.js';
+import { registerUser, loginUser, updateOnboarding, getUser, getProgress, updateProgress, checkUsername, verifyStorage, getModuleProgress } from '../controllers/authController.js';
 
 const router = express.Router();
 
@@ -21,7 +21,11 @@ router.get('/check-username', checkUsername);
 
 // Progress routes
 router.get('/progress/:userId', getProgress);
+router.get('/module-progress/:userId', getModuleProgress);
 router.put('/progress', updateProgress);
+
+// Debug route to verify database storage
+router.get('/verify-storage/:userId', verifyStorage);
 
 export default router;
 

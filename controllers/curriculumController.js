@@ -211,26 +211,151 @@ export const importCurriculum = async (req, res) => {
 export const listChapters = async (req, res) => {
   try {
     const { board = 'CBSE', subject = 'Science', classTitle, userId } = req.query;
+    console.log(`[Curriculum] listChapters called with:`, { board, subject, classTitle, userId });
+    
     if (userId) {
       const u = await User.findById(userId).select('subjectId');
       if (u && u.subjectId) {
         const chapters = await Chapter.find({ subjectId: u.subjectId }).sort({ order: 1 });
+        console.log(`[Curriculum] Found ${chapters.length} chapters for user subjectId`);
         return res.json(chapters);
       }
     }
+    
+    // Find board
     const b = await Board.findOne({ name: board });
-    if (!b) return res.json([]);
+    if (!b) {
+      console.log(`[Curriculum] Board '${board}' not found`);
+      return res.json([]);
+    }
+    console.log(`[Curriculum] Found board:`, b.name);
+    
+    // Find class if specified
     let cls;
     if (classTitle) {
       cls = await ClassLevel.findOne({ boardId: b._id, name: String(classTitle) });
-      if (!cls) return res.json([]);
+      if (!cls) {
+        console.log(`[Curriculum] Class '${classTitle}' not found for board '${board}'`);
+        return res.json([]);
+      }
+      console.log(`[Curriculum] Found class:`, cls.name);
     }
-    const s = await Subject.findOne({ boardId: b._id, name: subject, ...(cls ? { classId: cls._id } : {}) });
-    if (!s) return res.json([]);
+    
+    // Find subject with more flexible matching
+    let s = await Subject.findOne({ 
+      boardId: b._id, 
+      name: subject, 
+      ...(cls ? { classId: cls._id } : {}) 
+    });
+    
+    // If not found, try without class constraint
+    if (!s && cls) {
+      s = await Subject.findOne({ boardId: b._id, name: subject });
+      console.log(`[Curriculum] Subject found without class constraint:`, s ? s.name : 'none');
+    }
+    
+    // If still not found, try case-insensitive search
+    if (!s) {
+      s = await Subject.findOne({ 
+        boardId: b._id, 
+        name: { $regex: new RegExp(`^${subject}$`, 'i') },
+        ...(cls ? { classId: cls._id } : {}) 
+      });
+      console.log(`[Curriculum] Subject found with case-insensitive search:`, s ? s.name : 'none');
+    }
+    
+    if (!s) {
+      console.log(`[Curriculum] Subject '${subject}' not found for board '${board}' and class '${classTitle || 'any'}'`);
+      // Return empty array instead of error
+      return res.json([]);
+    }
+    
+    console.log(`[Curriculum] Found subject:`, s.name);
     const chapters = await Chapter.find({ subjectId: s._id }).sort({ order: 1 });
+    console.log(`[Curriculum] Found ${chapters.length} chapters for subject`);
     return res.json(chapters);
   } catch (err) {
+    console.error(`[Curriculum] Error in listChapters:`, err);
     return res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+// POST /api/curriculum/seed-basic-data
+// Creates basic data structure for testing
+export const seedBasicData = async (req, res) => {
+  try {
+    console.log('[Curriculum] Seeding basic data...');
+    
+    // Create board
+    const board = await Board.findOneAndUpdate(
+      { name: 'CBSE' },
+      { $setOnInsert: { name: 'CBSE' } },
+      { upsert: true, new: true }
+    );
+    console.log('[Curriculum] Board created/found:', board.name);
+    
+    // Create class
+    const classLevel = await ClassLevel.findOneAndUpdate(
+      { boardId: board._id, name: '5' },
+      { $setOnInsert: { boardId: board._id, name: '5', order: 5 } },
+      { upsert: true, new: true }
+    );
+    console.log('[Curriculum] Class created/found:', classLevel.name);
+    
+    // Create subject
+    const subject = await Subject.findOneAndUpdate(
+      { boardId: board._id, classId: classLevel._id, name: 'Science' },
+      { $setOnInsert: { boardId: board._id, classId: classLevel._id, name: 'Science' } },
+      { upsert: true, new: true }
+    );
+    console.log('[Curriculum] Subject created/found:', subject.name);
+    
+    // Create chapter
+    const chapter = await Chapter.findOneAndUpdate(
+      { subjectId: subject._id, title: 'Temperature And Thermometer' },
+      { $setOnInsert: { subjectId: subject._id, title: 'Temperature And Thermometer', order: 1 } },
+      { upsert: true, new: true }
+    );
+    console.log('[Curriculum] Chapter created/found:', chapter.title);
+    
+    // Create unit
+    const unit = await Unit.findOneAndUpdate(
+      { chapterId: chapter._id, title: 'Unit 1' },
+      { $setOnInsert: { chapterId: chapter._id, title: 'Unit 1', order: 1 } },
+      { upsert: true, new: true }
+    );
+    console.log('[Curriculum] Unit created/found:', unit.title);
+    
+    // Create modules
+    const modules = [
+      { title: 'Introduction to Temperature', order: 1 },
+      { title: 'What is a Thermometer?', order: 2 },
+      { title: 'Types of Thermometers', order: 3 }
+    ];
+    
+    const createdModules = [];
+    for (const moduleData of modules) {
+      const module = await Module.findOneAndUpdate(
+        { chapterId: chapter._id, unitId: unit._id, title: moduleData.title },
+        { $setOnInsert: { chapterId: chapter._id, unitId: unit._id, title: moduleData.title, order: moduleData.order } },
+        { upsert: true, new: true }
+      );
+      createdModules.push(module);
+    }
+    console.log('[Curriculum] Created modules:', createdModules.length);
+    
+    res.json({
+      message: 'Basic data seeded successfully',
+      board: board.name,
+      class: classLevel.name,
+      subject: subject.name,
+      chapter: chapter.title,
+      unit: unit.title,
+      modules: createdModules.length
+    });
+  } catch (err) {
+    console.error('[Curriculum] Error seeding basic data:', err);
+    res.status(500).json({ message: 'Server Error' });
   }
 };
 

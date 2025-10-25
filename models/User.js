@@ -67,6 +67,7 @@ const userSchema = mongoose.Schema(
         new mongoose.Schema(
           {
             chapter: { type: Number, required: true },
+            subject: { type: String, required: true }, // Add subject field
             conceptCompleted: { type: Boolean, default: false },
             quizCompleted: { type: Boolean, default: false },
             // Per-lesson stats keyed by lesson title
@@ -83,6 +84,11 @@ const userSchema = mongoose.Schema(
                 { _id: false }
               ),
               default: {},
+            },
+            // Track completed modules for this chapter/subject combination
+            completedModules: {
+              type: [String],
+              default: [],
             },
             updatedAt: { type: Date, default: Date.now },
           },

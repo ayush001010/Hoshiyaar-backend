@@ -81,7 +81,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Backend accessible from mobile: http://192.168.1.11:${PORT}`);
 });
-
 // One-time index migration: drop deprecated unique index on subjects (boardId_1_name_1)
 // and ensure the new compound index (boardId, classId, name). Safe to run on every boot.
 (async () => {

@@ -1,32 +1,34 @@
 import mongoose from 'mongoose';
-import Board from './models/Board.js';
 import Subject from './models/Subject.js';
 import Chapter from './models/Chapter.js';
-import Unit from './models/Unit.js';
-import Module from './models/Module.js';
+import dotenv from 'dotenv';
 
-mongoose.connect('mongodb://localhost:27017/hoshiyaar')
-  .then(async () => {
+dotenv.config();
+
+async function checkData() {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/hoshiyaar');
     console.log('Connected to MongoDB');
     
-    const boards = await Board.find({});
-    console.log('Boards:', boards.map(b => b.name));
+    // Check all subjects
+    const subjects = await Subject.find({}).populate('boardId classId');
+    console.log('\n=== SUBJECTS ===');
+    subjects.forEach(s => {
+      console.log(`Subject: ${s.name}, Board: ${s.boardId?.name}, Class: ${s.classId?.name}`);
+    });
     
-    const subjects = await Subject.find({});
-    console.log('Subjects:', subjects.map(s => s.name));
-    
-    const chapters = await Chapter.find({});
-    console.log('Chapters:', chapters.map(c => c.title));
-    
-    const units = await Unit.find({});
-    console.log('Units:', units.map(u => u.title));
-    
-    const modules = await Module.find({});
-    console.log('Modules:', modules.map(m => m.title));
+    // Check all chapters
+    const chapters = await Chapter.find({}).populate('subjectId');
+    console.log('\n=== CHAPTERS ===');
+    chapters.forEach(c => {
+      console.log(`Chapter: ${c.title}, Subject: ${c.subjectId?.name}`);
+    });
     
     process.exit(0);
-  })
-  .catch(err => {
-    console.error('Error:', err);
+  } catch (error) {
+    console.error('Error:', error);
     process.exit(1);
-  });
+  }
+}
+
+checkData();

@@ -188,14 +188,20 @@ export const getUser = async (req, res) => {
 // @access  Public (for simplicity) - ideally protect with auth middleware
 export const updateOnboarding = async (req, res) => {
   const { userId, username = null, board = null, subject = null, chapter = null, name = null, phone = null, classLevel = null, dateOfBirth = null, email = null, classTitle = null } = req.body;
+  
+  console.log('🔄 [Backend] updateOnboarding called with:', { userId, subject, board, chapter });
+  
   if (!userId) {
     return res.status(400).json({ message: 'userId is required' });
   }
   try {
+    console.log('🔍 [Backend] Looking for user with ID:', userId);
     const user = await User.findById(userId);
     if (!user) {
+      console.log('❌ [Backend] User not found with ID:', userId);
       return res.status(404).json({ message: 'User not found' });
     }
+    console.log('✅ [Backend] User found:', { id: user._id, username: user.username, currentSubject: user.subject });
     // Username update with uniqueness check
     if (username !== null && String(username).trim()) {
       const normalized = String(username).trim();
@@ -208,7 +214,10 @@ export const updateOnboarding = async (req, res) => {
       }
     }
     if (board !== null) user.board = board;
-    if (subject !== null) user.subject = subject;
+    if (subject !== null) {
+      console.log('🔄 [Backend] Updating subject from', user.subject, 'to', subject);
+      user.subject = subject;
+    }
     if (chapter !== null) user.chapter = chapter;
     if (name !== null) user.name = name;
     if (phone !== null) user.phone = phone;
@@ -269,7 +278,13 @@ export const updateOnboarding = async (req, res) => {
     } catch (e) {
       // Do not fail the request if resolution fails; keep strings and continue
     }
+    console.log('💾 [Backend] Saving user to database...');
     await user.save();
+    console.log('✅ [Backend] User saved successfully. New subject:', user.subject);
+    
+    // Verify the save by fetching the user again
+    const verifyUser = await User.findById(userId);
+    console.log('🔍 [Backend] Verification - User subject in database:', verifyUser.subject);
     return res.json({
       _id: user._id,
       username: user.username,
@@ -297,9 +312,42 @@ export const updateOnboarding = async (req, res) => {
 // @route   GET /api/auth/progress/:userId
 export const getProgress = async (req, res) => {
   try {
+    console.log(`[Auth] getProgress called for userId:`, req.params.userId);
+    const user = await User.findById(req.params.userId).select('chaptersProgress');
+    if (!user) {
+      console.log(`[Auth] User not found:`, req.params.userId);
+      return res.status(404).json({ message: 'User not found' });
+    }
+    console.log(`[Auth] Found user with ${user.chaptersProgress?.length || 0} progress entries`);
+    res.json(user.chaptersProgress || []);
+  } catch (error) {
+    console.error(`[Auth] Error in getProgress:`, error);
+    res.status(500).json({ message: `Server Error: ${error.message}` });
+  }
+};
+
+// @desc    Get module-specific progress for a user
+// @route   GET /api/auth/module-progress/:userId
+export const getModuleProgress = async (req, res) => {
+  try {
+    const { subject, chapter } = req.query;
     const user = await User.findById(req.params.userId).select('chaptersProgress');
     if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json(user.chaptersProgress || []);
+    
+    // Find progress for specific subject and chapter
+    const progress = user.chaptersProgress.find(p => 
+      p.subject === subject && p.chapter === parseInt(chapter)
+    );
+    
+    if (!progress) {
+      return res.json({ completedModules: [] });
+    }
+    
+    res.json({ 
+      completedModules: progress.completedModules || [],
+      conceptCompleted: progress.conceptCompleted,
+      quizCompleted: progress.quizCompleted
+    });
   } catch (error) {
     res.status(500).json({ message: `Server Error: ${error.message}` });
   }
@@ -308,18 +356,64 @@ export const getProgress = async (req, res) => {
 // @desc    Update chapter progress
 // @route   PUT /api/auth/progress
 export const updateProgress = async (req, res) => {
-  const { userId, chapter, conceptCompleted, quizCompleted, lessonTitle, isCorrect, deltaScore = 0, resetLesson = false } = req.body;
+  const { userId, chapter, subject, conceptCompleted, quizCompleted, lessonTitle, isCorrect, deltaScore = 0, resetLesson = false, moduleId } = req.body;
   if (!userId) return res.status(400).json({ message: 'userId is required' });
   try {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
-    // Coerce chapter to a safe number; default to 1 if not provided/NaN (supports moduleId URLs)
-    const chapterNum = Number(chapter);
-    const normalizedChapter = Number.isFinite(chapterNum) && chapterNum > 0 ? chapterNum : 1;
-    const idx = user.chaptersProgress.findIndex((c) => c.chapter === normalizedChapter);
+    
+    // Handle both chapter numbers and module IDs
+    let normalizedChapter;
+    let actualModuleId = moduleId || chapter;
+    
+    if (typeof chapter === 'string' && chapter.length > 10) {
+      // This looks like a module ID, find the chapter it belongs to
+      try {
+        const Module = (await import('../models/Module.js')).default;
+        const Chapter = (await import('../models/Chapter.js')).default;
+        const module = await Module.findById(chapter);
+        if (module && module.chapterId) {
+          const chapterDoc = await Chapter.findById(module.chapterId);
+          if (chapterDoc) {
+            // Use the chapter's order or a sequential number
+            normalizedChapter = chapterDoc.order || 1;
+            actualModuleId = module._id;
+            console.log(`[Progress] Resolved module ${chapter} to chapter ${normalizedChapter} (${chapterDoc.title})`);
+          } else {
+            normalizedChapter = 1;
+            console.warn(`[Progress] Module ${chapter} has chapterId ${module.chapterId} but chapter not found`);
+          }
+        } else {
+          normalizedChapter = 1;
+          console.warn(`[Progress] Module ${chapter} not found or has no chapterId`);
+        }
+      } catch (error) {
+        console.warn('Failed to resolve module to chapter:', error);
+        normalizedChapter = 1;
+      }
+    } else {
+      // Coerce chapter to a safe number; default to 1 if not provided/NaN
+      const chapterNum = Number(chapter);
+      normalizedChapter = Number.isFinite(chapterNum) && chapterNum > 0 ? chapterNum : 1;
+      console.log(`[Progress] Using chapter number: ${normalizedChapter}`);
+    }
+    // Find progress entry by both chapter and subject
+    const idx = user.chaptersProgress.findIndex((c) => c.chapter === normalizedChapter && c.subject === subject);
     if (idx >= 0) {
       if (typeof conceptCompleted === 'boolean') user.chaptersProgress[idx].conceptCompleted = conceptCompleted;
       if (typeof quizCompleted === 'boolean') user.chaptersProgress[idx].quizCompleted = quizCompleted;
+      
+      // Add module-specific completion tracking
+      if (actualModuleId && typeof conceptCompleted === 'boolean') {
+        if (!user.chaptersProgress[idx].completedModules) {
+          user.chaptersProgress[idx].completedModules = new Set();
+        }
+        if (conceptCompleted) {
+          user.chaptersProgress[idx].completedModules.add(String(actualModuleId));
+        } else {
+          user.chaptersProgress[idx].completedModules.delete(String(actualModuleId));
+        }
+      }
       if (lessonTitle && typeof isCorrect === 'boolean') {
         const stats = user.chaptersProgress[idx].stats || new Map();
         // Reset lesson score if requested when opening lesson
@@ -335,17 +429,49 @@ export const updateProgress = async (req, res) => {
         current.lastReviewedAt = new Date();
         stats.set(lessonTitle, current);
         user.chaptersProgress[idx].stats = stats;
+        
+        console.log(`[Progress] Updated scores for user ${userId}, chapter ${normalizedChapter}, lesson "${lessonTitle}":`, {
+          isCorrect,
+          deltaScore: Number(deltaScore || 0),
+          newLastScore: current.lastScore,
+          newBestScore: current.bestScore,
+          correct: current.correct,
+          wrong: current.wrong
+        });
       }
       user.chaptersProgress[idx].updatedAt = new Date();
     } else {
-      user.chaptersProgress.push({
+      const newProgress = {
         chapter: normalizedChapter,
+        subject: subject || 'Unknown', // Include subject in new progress entry
         conceptCompleted: !!conceptCompleted,
         quizCompleted: !!quizCompleted,
         stats: lessonTitle && typeof isCorrect === 'boolean' ? new Map([[lessonTitle, { correct: isCorrect ? 1 : 0, wrong: isCorrect ? 0 : 1, bestScore: Math.max(0, Number(deltaScore || 0)), lastScore: Math.max(0, Number(deltaScore || 0)), lastReviewedAt: new Date() }]]) : new Map(),
-      });
+      };
+      
+      // Add module-specific completion tracking for new progress entry
+      if (actualModuleId && typeof conceptCompleted === 'boolean') {
+        newProgress.completedModules = new Set();
+        if (conceptCompleted) {
+          newProgress.completedModules.add(String(actualModuleId));
+        }
+      }
+      
+      user.chaptersProgress.push(newProgress);
     }
     await user.save();
+    
+    // Log the final state to verify database storage
+    console.log(`[Progress] Successfully saved progress to database for user ${userId}:`, {
+      chapter: normalizedChapter,
+      conceptCompleted,
+      quizCompleted,
+      lessonTitle,
+      isCorrect,
+      deltaScore: Number(deltaScore || 0),
+      totalChapters: user.chaptersProgress.length
+    });
+    
     res.json(user.chaptersProgress);
   } catch (error) {
     res.status(500).json({ message: `Server Error: ${error.message}` });
@@ -365,6 +491,51 @@ export const checkUsername = async (req, res) => {
     return res.json({ available: !exists });
   } catch (error) {
     return res.status(500).json({ message: `Server Error: ${error.message}` });
+  }
+};
+
+// @desc    Verify database storage for debugging
+// @route   GET /api/auth/verify-storage/:userId
+// @access  Public (for debugging)
+export const verifyStorage = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId).select('chaptersProgress');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // Calculate total points from all chapters
+    let totalPoints = 0;
+    let totalCorrect = 0;
+    let totalWrong = 0;
+    
+    user.chaptersProgress.forEach((chapter, index) => {
+      console.log(`[Verify] Chapter ${chapter.chapter}:`, {
+        conceptCompleted: chapter.conceptCompleted,
+        quizCompleted: chapter.quizCompleted,
+        statsCount: chapter.stats ? chapter.stats.size : 0
+      });
+      
+      if (chapter.stats) {
+        chapter.stats.forEach((lessonStats, lessonTitle) => {
+          totalPoints += lessonStats.bestScore || 0;
+          totalCorrect += lessonStats.correct || 0;
+          totalWrong += lessonStats.wrong || 0;
+          console.log(`[Verify] Lesson "${lessonTitle}":`, lessonStats);
+        });
+      }
+    });
+    
+    res.json({
+      userId: req.params.userId,
+      totalChapters: user.chaptersProgress.length,
+      totalPoints,
+      totalCorrect,
+      totalWrong,
+      chaptersProgress: user.chaptersProgress
+    });
+  } catch (error) {
+    res.status(500).json({ message: `Server Error: ${error.message}` });
   }
 };
 
